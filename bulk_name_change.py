@@ -14,16 +14,10 @@ def format_new_filename(original_name, season, episode, anime_name, is_subtitle)
     # Create the new filename based on whether anime_name was provided
     # Only add ".ja" for subtitle files
     if anime_name:
-        if is_subtitle:
-            return f"{anime_name}_s{s}_e{e}.ja.{file_ext}"
-        else:
-            return f"{anime_name}_s{s}_e{e}.{file_ext}"
+        return f"{anime_name}_s{s}_e{e}.{file_ext}"
     else:
         base_name = '.'.join(original_name.split('.')[:-1])  # Get filename without extension
-        if is_subtitle:
-            return f"{base_name}_s{s}_e{e}.ja.{file_ext}"
-        else:
-            return f"{base_name}_s{s}_e{e}.{file_ext}"
+        return f"{base_name}_s{s}_e{e}.{file_ext}"
 
 def name_changer(names, season, anime_name, is_subtitle):
     if not names:
