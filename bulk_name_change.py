@@ -1,7 +1,5 @@
 import os
-import sys
 import re
-from difflib import get_close_matches
 
 def select_folder(base_path):
     """
@@ -104,6 +102,19 @@ def format_anime_name(anime_name):
     return formatted_name
 
 def format_new_filename(original_name, season, episode, anime_name, is_subtitle):
+    """
+    Format a new filename for anime episodes with season and episode numbers.
+
+    Args:
+        original_name (str): Original filename of the episode
+        season (int): Season number
+        episode (int): Episode number
+        anime_name (str): Name of the anime, formatted for filenames
+        is_subtitle (bool): Whether this is a subtitle file
+
+    Returns:
+        str: The formatted filename with season and episode numbers
+    """
     # Format season and episode numbers with leading zeros
     s, e = str(season), str(episode)
     if len(s) < 2:
@@ -115,14 +126,20 @@ def format_new_filename(original_name, season, episode, anime_name, is_subtitle)
     file_ext = original_name.split('.')[-1]
 
     # Create the new filename based on whether anime_name was provided
-    # Only add ".ja" for subtitle files
+    # Only add ".jpn" for subtitle files
     if anime_name:
-        return f"{anime_name}_s{s}_e{e}.{file_ext}"
+        if is_subtitle:
+            return f"{anime_name}_s{s}_e{e}.jpn.{file_ext}"
+        else:
+            return f"{anime_name}_s{s}_e{e}.{file_ext}"
     else:
         base_name = '.'.join(original_name.split('.')[:-1])  # Get filename without extension
-        return f"{base_name}_s{s}_e{e}.{file_ext}"
+        if is_subtitle:
+            return f"{base_name}_s{s}_e{e}.jpn.{file_ext}"
+        else:
+            return f"{base_name}_s{s}_e{e}.{file_ext}"
 
-def name_changer(directory, names, season, anime_name, is_subtitle):
+def name_changer(directory, names, season, anime_name, is_subtitle, skip_confirmation=False):
     if not names:
         print("No files found in the selected directory.")
         return []
@@ -138,11 +155,14 @@ def name_changer(directory, names, season, anime_name, is_subtitle):
         print(f"{name} → {new_name}")
         episode += 1
 
-    # Ask for confirmation
-    confirm = input("\nProceed with renaming? (y/n): ").lower().strip()
-    if confirm != 'y':
-        print("Operation cancelled.")
-        return []
+    # Ask for confirmation if not skipping
+    if not skip_confirmation:
+        confirm = input("\nProceed with renaming? (y/n): ").lower().strip()
+        if confirm != 'y':
+            print("Operation cancelled.")
+            return []
+    else:
+        print("Proceeding with renaming automatically...")
 
     # Reset episode counter for actual renaming
     episode = 1
@@ -193,81 +213,6 @@ def get_names():
     inferred_anime_name = extract_anime_name(show_folder_name)
     print(f"Inferred anime name: {inferred_anime_name}")
 
-    # Check for season folders
-    season_folders = detect_season_folders(selected_dir)
-
-    working_dir = selected_dir
-    season_num = 1  # Default season number
-    in_season_folder = False
-
-    if season_folders:
-        print("\nFound season folders:")
-        for idx, (folder_path, season_number) in enumerate(season_folders, 1):
-            folder_name = os.path.basename(folder_path)
-            print(f"{idx}. {folder_name} (Season {season_number})")
-
-        # Let user select a season folder or use the current folder
-        while True:
-            selection = input("\nSelect a season folder number or press Enter to use the show directory: ")
-            if not selection:
-                # Use the show directory, extract season number if possible
-                season_num = extract_season_number(os.path.basename(selected_dir))
-                print(f"Using show directory with season {season_num}")
-                break
-            elif selection.isdigit() and 1 <= int(selection) <= len(season_folders):
-                idx = int(selection) - 1
-                working_dir, season_num = season_folders[idx]
-                in_season_folder = True
-                print(f"Selected season folder: {os.path.basename(working_dir)} (Season {season_num})")
-                break
-            else:
-                print("Invalid selection. Try again.")
-    else:
-        # No season folders found, extract season number from the directory name if possible
-        season_num = extract_season_number(os.path.basename(selected_dir))
-        print(f"No season folders found. Using season {season_num}")
-
-    # Change to the working directory
-    try:
-        os.chdir(working_dir)
-    except OSError as e:
-        print(f"Error changing to directory {working_dir}: {str(e)}")
-        return "Failed"
-
-    # List all files in the directory
-    try:
-        files = os.listdir(working_dir)
-    except OSError as e:
-        print(f"Error accessing directory: {str(e)}")
-        return "Failed"
-
-    # Ask user if they're working with subtitle or video files
-    while True:
-        file_type = input("Are you renaming subtitle or video files? (subtitle/video): ").lower().strip()
-        if file_type in ['subtitle', 'video']:
-            break
-        print("Please enter either 'subtitle' or 'video'.")
-
-    is_subtitle = file_type == 'subtitle'
-
-    # Define file extensions based on type
-    if is_subtitle:
-        target_extensions = ('.srt', '.ass', '.vtt')
-        print("Looking for subtitle files (.srt, .ass, .vtt)...")
-    else:
-        target_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv')
-        print(f"Looking for video files {target_extensions}...")
-
-    # Filter files based on the selected type
-    target_files = [file for file in files if file.lower().endswith(target_extensions)]
-
-    if not target_files:
-        print(f"No {file_type} files found in the selected directory.")
-        return f"No {file_type} files found"
-
-    print(f"Found {len(target_files)} {file_type} files.")
-    print(f"Using season number: {season_num}")
-
     # Format the inferred anime name
     formatted_inferred_name = format_anime_name(inferred_anime_name)
 
@@ -293,13 +238,261 @@ def get_names():
     if anime_name:
         print(f"Using formatted anime name: {anime_name}")
 
-    renamed = name_changer(working_dir, target_files, season_num, anime_name, is_subtitle)
+    # Ask user if they're working with subtitle or video files
+    while True:
+        file_type = input("Are you renaming subtitle or video files? (subtitle/video): ").lower().strip()
+        if file_type in ['subtitle', 'video']:
+            break
+        print("Please enter either 'subtitle' or 'video'.")
 
-    if renamed:
-        return f"Success! Renamed {len(renamed)} files."
+    is_subtitle = file_type == 'subtitle'
 
-    return "No files were renamed."
+    # Define file extensions based on type
+    if is_subtitle:
+        target_extensions = ('.srt', '.ass', '.vtt')
+        print("Looking for subtitle files (.srt, .ass, .vtt)...")
+    else:
+        target_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv')
+        print(f"Looking for video files {target_extensions}...")
+
+    # Check for season folders
+    season_folders = detect_season_folders(selected_dir)
+    total_renamed_files = 0
+
+    if season_folders:
+        print(f"\nFound {len(season_folders)} season folders. Processing all folders automatically.")
+
+        # Sort season folders by season number
+        season_folders.sort(key=lambda x: x[1])
+
+        for folder_path, season_num in season_folders:
+            folder_name = os.path.basename(folder_path)
+            print(f"\nProcessing {folder_name} (Season {season_num})...")
+
+            try:
+                # List all files in the season directory
+                files = os.listdir(folder_path)
+
+                # Filter files based on the selected type
+                target_files = [file for file in files if file.lower().endswith(target_extensions)]
+
+                if not target_files:
+                    print(f"No {file_type} files found in {folder_name}.")
+                    continue
+
+                print(f"Found {len(target_files)} {file_type} files.")
+
+                # Process the files in this season folder
+                renamed = name_changer(folder_path, target_files, season_num, anime_name, is_subtitle)
+
+                if renamed:
+                    total_renamed_files += len(renamed)
+                    print(f"Renamed {len(renamed)} files in {folder_name}.")
+
+            except OSError as e:
+                print(f"Error accessing directory {folder_path}: {str(e)}")
+                continue
+
+    else:
+        # No season folders found, process the main directory
+        print("No season folders found. Processing main directory.")
+
+        season_num = extract_season_number(os.path.basename(selected_dir))
+        print(f"Using season {season_num} for main directory.")
+
+        try:
+            files = os.listdir(selected_dir)
+
+            # Filter files based on the selected type
+            target_files = [file for file in files if file.lower().endswith(target_extensions)]
+
+            if not target_files:
+                print(f"No {file_type} files found in the main directory.")
+                return f"No {file_type} files found"
+
+            print(f"Found {len(target_files)} {file_type} files.")
+
+            # Process the files in the main directory
+            renamed = name_changer(selected_dir, target_files, season_num, anime_name, is_subtitle)
+
+            if renamed:
+                total_renamed_files += len(renamed)
+
+        except OSError as e:
+            print(f"Error accessing directory {selected_dir}: {str(e)}")
+            return "Failed"
+
+    if total_renamed_files > 0:
+        return f"Success! Renamed a total of {total_renamed_files} files across all folders."
+    else:
+        return "No files were renamed."
+
+def auto_rename_files():
+    """
+    Automatically rename all subtitle and video files in all anime directories.
+    Preserves anime names and season numbers.
+    Only asks whether to rename subtitle or video files.
+    """
+    # Define the TV shows directory
+    shows_dir = "E:\\Shows"
+
+    # Check if the directory exists
+    if not os.path.isdir(shows_dir):
+        print(f"Error: TV shows directory not found at {shows_dir}")
+        shows_dir = input("Please enter the path to your TV shows directory: ")
+        if not os.path.isdir(shows_dir):
+            print(f"Error: Directory not found at {shows_dir}")
+            return "Failed"
+
+    print(f"Using TV shows directory: {shows_dir}")
+
+    # Ask user if they're working with subtitle or video files
+    while True:
+        file_type = input("Are you renaming subtitle or video files? (subtitle/video): ").lower().strip()
+        if file_type in ['subtitle', 'video']:
+            break
+        print("Please enter either 'subtitle' or 'video'.")
+
+    is_subtitle = file_type == 'subtitle'
+
+    # Define file extensions based on type
+    if is_subtitle:
+        target_extensions = ('.srt', '.ass', '.vtt')
+        print("Looking for subtitle files (.srt, .ass, .vtt)...")
+    else:
+        target_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv')
+        print(f"Looking for video files {target_extensions}...")
+
+    # Get all show directories
+    try:
+        show_dirs = [d for d in os.listdir(shows_dir) if os.path.isdir(os.path.join(shows_dir, d))]
+    except Exception as e:
+        print(f"Error accessing shows directory: {str(e)}")
+        return "Failed"
+
+    if not show_dirs:
+        print("No show directories found.")
+        return "Failed"
+
+    # Display summary of what will be processed
+    print(f"\nFound {len(show_dirs)} show directories to process.")
+    print("This automated mode will:")
+    print("- Process all show directories")
+    print("- Extract anime names automatically from folder names")
+    print("- Detect season folders and use appropriate season numbers")
+    print("- Rename all files without individual confirmations")
+
+    # Global confirmation
+    confirm = input("\nDo you want to proceed with automatic processing of ALL shows? (y/n): ").lower().strip()
+    if confirm != 'y':
+        print("Operation cancelled.")
+        return "Operation cancelled by user."
+
+    total_renamed_files = 0
+    processed_shows = 0
+
+    # Process each show directory
+    for show_folder in show_dirs:
+        show_path = os.path.join(shows_dir, show_folder)
+        show_folder_name = os.path.basename(show_path)
+
+        # Extract and format anime name
+        inferred_anime_name = extract_anime_name(show_folder_name)
+        anime_name = format_anime_name(inferred_anime_name)
+
+        if not anime_name:
+            print(f"Skipping {show_folder_name} - could not infer anime name")
+            continue
+
+        print(f"\nProcessing show: {show_folder_name}")
+        print(f"Using anime name: {anime_name}")
+
+        # Check for season folders
+        season_folders = detect_season_folders(show_path)
+
+        if season_folders:
+            print(f"Found {len(season_folders)} season folders.")
+
+            # Sort season folders by season number
+            season_folders.sort(key=lambda x: x[1])
+
+            for folder_path, season_num in season_folders:
+                folder_name = os.path.basename(folder_path)
+                print(f"Processing {folder_name} (Season {season_num})...")
+
+                try:
+                    # List all files in the season directory
+                    files = os.listdir(folder_path)
+
+                    # Filter files based on the selected type
+                    target_files = [file for file in files if file.lower().endswith(target_extensions)]
+
+                    if not target_files:
+                        print(f"No {file_type} files found in {folder_name}.")
+                        continue
+
+                    print(f"Found {len(target_files)} {file_type} files.")
+
+                    # Process the files in this season folder
+                    renamed = name_changer(folder_path, target_files, season_num, anime_name, is_subtitle, skip_confirmation=True)
+
+                    if renamed:
+                        total_renamed_files += len(renamed)
+
+                except OSError as e:
+                    print(f"Error accessing directory {folder_path}: {str(e)}")
+                    continue
+        else:
+            # No season folders found, process the main directory
+            print("No season folders found. Processing main directory.")
+
+            season_num = extract_season_number(show_folder_name)
+            print(f"Using season {season_num} for main directory.")
+
+            try:
+                files = os.listdir(show_path)
+
+                # Filter files based on the selected type
+                target_files = [file for file in files if file.lower().endswith(target_extensions)]
+
+                if not target_files:
+                    print(f"No {file_type} files found in {show_folder_name}.")
+                    continue
+
+                print(f"Found {len(target_files)} {file_type} files.")
+
+                # Process the files in the main directory
+                renamed = name_changer(show_path, target_files, season_num, anime_name, is_subtitle, skip_confirmation=True)
+
+                if renamed:
+                    total_renamed_files += len(renamed)
+
+            except OSError as e:
+                print(f"Error accessing directory {show_path}: {str(e)}")
+                continue
+
+        processed_shows += 1
+
+    if total_renamed_files > 0:
+        return f"Success! Renamed a total of {total_renamed_files} files across {processed_shows} shows."
+    else:
+        return "No files were renamed."
 
 if __name__ == "__main__":
-    result = get_names()
+    print("Anime Episode Filename Formatter")
+    print("--------------------------------")
+    print("1. Interactive Mode (select specific show and confirm changes)")
+    print("2. Automatic Mode (process all shows with minimal confirmation)")
+
+    while True:
+        mode_choice = input("\nSelect mode (1/2): ").strip()
+        if mode_choice in ['1', '2']:
+            break
+        print("Please enter 1 or 2.")
+
+    if mode_choice == '1':
+        result = get_names()
+    else:
+        result = auto_rename_files()
+
     print(result)
